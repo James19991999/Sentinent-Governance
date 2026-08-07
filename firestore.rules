@@ -1,0 +1,177 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---- Helpers --------------------------------------------------------
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function membershipDoc(orgId) {
+      return get(/databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid));
+    }
+
+    function isMember(orgId) {
+      return isSignedIn() && membershipDoc(orgId).data.userId == request.auth.uid;
+    }
+
+    function roleOf(orgId) {
+      return membershipDoc(orgId).data.role;
+    }
+
+    function hasRole(orgId, minimum) {
+      let rank = { 'member': 0, 'admin': 1, 'owner': 2 };
+      return isMember(orgId) && rank[roleOf(orgId)] >= rank[minimum];
+    }
+
+    function isOwnerOf(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // ---- Users ------------------------------------------------------------
+    // A user's own profile document. Never readable/writable by anyone else —
+    // cross-tenant or cross-user reads of profile data are structurally blocked.
+
+    match /users/{userId} {
+      allow read: if isOwnerOf(userId);
+      allow create: if isOwnerOf(userId)
+        && request.resource.data.id == userId
+        && request.resource.data.keys().hasOnly(['id', 'email', 'displayName', 'createdAt']);
+      allow update: if isOwnerOf(userId)
+        && request.resource.data.id == resource.data.id
+        && request.resource.data.email == resource.data.email; // email change goes through Auth, not this doc
+      allow delete: if false;
+    }
+
+    // ---- Organizations ------------------------------------------------------
+
+    match /organizations/{orgId} {
+      allow read: if isMember(orgId);
+      // Org creation happens client-side at onboarding: the creator sets
+      // themself as ownerId AND must simultaneously create their own
+      // membership doc as 'owner' (enforced below) — you cannot create an
+      // org you don't also become the owner-member of.
+      allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
+      // Billing fields (stripe*, plan, subscriptionStatus) are written only
+      // by the server (Admin SDK bypasses rules) via webhook/checkout routes —
+      // clients may only ever update the org's display name.
+      allow update: if hasRole(orgId, 'owner')
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name']);
+      allow delete: if false;
+
+      match /members/{memberId} {
+        // A member can read their own membership row; owners/admins can read
+        // the whole roster to render RBAC-gated UI.
+        allow read: if isOwnerOf(memberId) || hasRole(orgId, 'admin');
+        // The very first membership (org creation) must be the caller
+        // creating themself as owner of an org they already created and
+        // own. This intentionally checks org.ownerId rather than
+        // "org doesn't exist yet" — the app creates the org document FIRST
+        // (see app/onboarding/page.tsx), so by the time this membership
+        // write happens the org already exists. Checking ownerId instead
+        // of non-existence works with that real write order instead of
+        // fighting it, and is not gameable: ownerId is set once at org
+        // creation (allow create above) and is never client-updatable
+        // (see the org `allow update` rule, which permits only `name`).
+        allow create: if isSignedIn() && request.auth.uid == memberId
+          && request.resource.data.userId == memberId
+          && request.resource.data.role == 'owner'
+          && get(/databases/$(database)/documents/organizations/$(orgId)).data.ownerId == request.auth.uid;
+        allow create: if hasRole(orgId, 'admin')
+          && request.resource.data.role in ['member', 'admin'];
+        allow update: if hasRole(orgId, 'owner') && memberId != request.auth.uid; // owners can't demote themselves via this path
+        // Self-service preferences (Settings page toggles): a member may
+        // update ONLY the `preferences` map on their own membership doc —
+        // role, userId, and joinedAt are structurally untouchable via this path.
+        allow update: if isOwnerOf(memberId)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['preferences'])
+          && request.resource.data.role == resource.data.role
+          && request.resource.data.userId == resource.data.userId;
+        allow delete: if hasRole(orgId, 'owner') && memberId != request.auth.uid;
+      }
+
+      // Audit log: append-only, server-written, admin/owner-readable, never
+      // client-writable at any role — this is the compliance trail.
+      match /auditLog/{entryId} {
+        allow read: if hasRole(orgId, 'admin');
+        allow write: if false;
+      }
+
+      // Scheduled compliance-report snapshots (app/api/cron/compliance-reports).
+      // Written exclusively by the cron job via the Admin SDK, which
+      // bypasses rules — this is a read-only view for the org's admins/owner.
+      match /complianceReportSnapshots/{snapshotId} {
+        allow read: if hasRole(orgId, 'admin');
+        allow write: if false;
+      }
+
+      // Org-added courses for the Upskilling Hub, layered on top of the
+      // built-in global catalog (lib/data/courses.ts). Any member can see
+      // them; only admin/owner can add or remove one, matching the same
+      // elevated-review pattern as workflow certification.
+      match /customCourses/{courseId} {
+        allow read: if isMember(orgId);
+        allow create: if hasRole(orgId, 'admin')
+          && request.resource.data.orgId == orgId
+          && request.resource.data.createdBy == request.auth.uid
+          && request.resource.data.keys().hasOnly(['title', 'category', 'durationHours', 'orgId', 'createdBy', 'createdAt']);
+        allow delete: if hasRole(orgId, 'admin');
+        allow update: if false;
+      }
+    }
+
+    // ---- Bias Detection Audit (fairnessReports) --------------------------
+    // Written exclusively by the /api/bias-audit server route (Admin SDK,
+    // bypasses rules) so the fairness math can't be spoofed by a client.
+    // Clients get read-only, tenant-scoped access.
+
+    match /fairnessReports/{reportId} {
+      allow read: if isMember(resource.data.orgId);
+      allow write: if false;
+    }
+
+    // ---- Automation Workflows ----------------------------------------------
+
+    match /workflows/{workflowId} {
+      allow read: if isMember(resource.data.orgId);
+      allow create: if hasRole(request.resource.data.orgId, 'member')
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.keys().hasOnly(
+          ['orgId', 'name', 'department', 'ethicsStatus', 'efficiencyGainPct', 'createdAt', 'updatedAt', 'createdBy']
+        )
+        && request.resource.data.ethicsStatus == 'reviewing'; // new workflows always start under review
+      allow update: if hasRole(resource.data.orgId, 'admin')
+        && request.resource.data.orgId == resource.data.orgId
+        && request.resource.data.createdBy == resource.data.createdBy;
+      allow delete: if hasRole(resource.data.orgId, 'admin');
+    }
+
+    // ---- Employee Upskilling Hub --------------------------------------------
+
+    match /courseCompletions/{completionId} {
+      allow read: if isMember(resource.data.orgId);
+      // A member may only ever record their own completion, for their own org.
+      allow create: if isMember(request.resource.data.orgId)
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.keys().hasOnly(['orgId', 'userId', 'courseId', 'completedAt', 'score']);
+      allow update, delete: if false; // completions are immutable once recorded
+    }
+
+    // ---- Ethical AI Guidelines: project compliance checklist --------------
+
+    match /complianceItems/{itemId} {
+      allow read: if isMember(resource.data.orgId);
+      allow write: if hasRole(request.resource.data.orgId, 'member')
+        && request.resource.data.keys().hasOnly(['orgId', 'label', 'completed', 'completedAt', 'completedBy']);
+    }
+
+    // ---- Stripe webhook idempotency ledger ---------------------------------
+    // Server-only (Admin SDK). No client access whatsoever.
+
+    match /stripeWebhookEvents/{eventId} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,0 +1,114 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+  Material Design 3 tokens as CSS custom properties (RGB triplets, consumed
+  via rgb(var(--x) / <alpha-value>) in tailwind.config.ts so opacity
+  modifiers like bg-error-container/30 keep working). :root holds the light
+  theme (matches the Stitch export exactly); .dark overrides the same
+  variable names so no component code needs to change to support dark mode.
+  Tones with "fixed"/"fixed-dim" in the name are M3-theme-invariant by
+  design and are intentionally NOT overridden in .dark.
+*/
+:root {
+  --surface: 247 249 251;
+  --surface-dim: 216 218 220;
+  --surface-bright: 247 249 251;
+  --surface-container-lowest: 255 255 255;
+  --surface-container-low: 242 244 246;
+  --surface-container: 236 238 240;
+  --surface-container-high: 230 232 234;
+  --surface-container-highest: 224 227 229;
+  --surface-variant: 224 227 229;
+  --on-surface: 25 28 30;
+  --on-surface-variant: 69 70 77;
+  --inverse-surface: 45 49 51;
+  --inverse-on-surface: 239 241 243;
+  --outline: 118 119 125;
+  --outline-variant: 198 198 205;
+  --primary: 15 23 42;
+  --primary-container: 19 27 46;
+  --primary-fixed: 218 226 253;
+  --primary-fixed-dim: 190 198 224;
+  --on-primary: 255 255 255;
+  --on-primary-container: 124 131 155;
+  --secondary: 12 127 117;
+  --secondary-container: 134 242 228;
+  --secondary-fixed: 137 245 231;
+  --secondary-fixed-dim: 107 216 203;
+  --on-secondary: 255 255 255;
+  --on-secondary-container: 0 111 102;
+  --tertiary: 90 0 198;
+  --tertiary-container: 37 0 90;
+  --tertiary-fixed: 234 221 255;
+  --tertiary-fixed-dim: 210 187 255;
+  --on-tertiary: 255 255 255;
+  --on-tertiary-container: 152 99 255;
+  --error: 186 26 26;
+  --error-container: 255 218 214;
+  --on-error: 255 255 255;
+  --on-error-container: 147 0 10;
+  --background: 247 249 251;
+  --on-background: 25 28 30;
+  color-scheme: light;
+}
+
+.dark {
+  --surface: 15 17 21;
+  --surface-dim: 10 11 14;
+  --surface-bright: 35 38 44;
+  --surface-container-lowest: 8 9 11;
+  --surface-container-low: 17 19 23;
+  --surface-container: 21 24 29;
+  --surface-container-high: 27 30 36;
+  --surface-container-highest: 33 36 43;
+  --surface-variant: 45 46 53;
+  --on-surface: 227 226 230;
+  --on-surface-variant: 198 198 205;
+  --inverse-surface: 227 226 230;
+  --inverse-on-surface: 25 28 30;
+  --outline: 138 140 148;
+  --outline-variant: 66 68 77;
+  --primary: 218 226 253;
+  --primary-container: 30 41 66;
+  --on-primary: 15 23 42;
+  --on-primary-container: 190 198 224;
+  --secondary: 107 216 203;
+  --secondary-container: 0 63 58;
+  --on-secondary: 0 40 36;
+  --on-secondary-container: 134 242 228;
+  --tertiary: 210 187 255;
+  --tertiary-container: 61 0 133;
+  --on-tertiary: 55 0 122;
+  --on-tertiary-container: 234 221 255;
+  --error: 255 180 171;
+  --error-container: 147 0 10;
+  --on-error: 105 0 5;
+  --on-error-container: 255 218 214;
+  --background: 15 17 21;
+  --on-background: 227 226 230;
+  color-scheme: dark;
+}
+
+@layer base {
+  body {
+    @apply bg-background text-on-background font-body;
+  }
+  h1, h2, h3, h4 {
+    @apply font-display;
+  }
+  *:focus-visible {
+    outline: 2px solid rgb(var(--secondary));
+    outline-offset: 2px;
+  }
+}
+
+@layer utilities {
+  .card {
+    @apply bg-surface-container-lowest border border-outline-variant rounded-lg p-6;
+  }
+  .ai-glow {
+    box-shadow: 0 0 0 1px rgba(90, 0, 198, 0.12), 0 0 24px rgba(90, 0, 198, 0.08);
+  }
+}
