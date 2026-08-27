@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useState, useCallback } from "rea
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { collectionGroup, query, where, onSnapshot, doc, getDoc, updateDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase/client";
+import { setAuthCookie } from "@/lib/auth/authCookie";
 import type { GovernancePreferences, Organization, Role, UserProfile } from "@/lib/types";
 
 const DEFAULT_PREFERENCES: GovernancePreferences = {
@@ -49,11 +50,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // anonymous requests. This is a UX/defense-in-depth improvement only —
       // it grants no access; the actual boundary is requireAuth() on API
       // routes and firestore.rules on direct client reads/writes.
-      if (typeof document !== "undefined") {
-        document.cookie = u
-          ? "sg_auth=1; path=/; max-age=2592000; SameSite=Lax"
-          : "sg_auth=; path=/; max-age=0";
-      }
+      // Belt-and-braces: the sign-in/sign-up functions in lib/auth/session.ts
+      // already set this cookie synchronously before router.push runs (see
+      // that file's comments for why relying on this listener ALONE created
+      // a deadlock). This call keeps the cookie in sync for cases those
+      // functions don't cover directly — session restore on page load,
+      // sign-out from any tab, token expiry, etc.
+      setAuthCookie(Boolean(u));
       if (!u) {
         setProfile(null);
         setOrgs([]);
