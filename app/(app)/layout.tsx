@@ -9,15 +9,29 @@ import { MobileBottomNav } from "@/components/layout/MobileBottomNav";
 import { EmailVerificationBanner } from "@/components/layout/EmailVerificationBanner";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { ErrorState } from "@/components/ui/ErrorState";
 import { Button } from "@/components/ui/Button";
 
 function AppShellInner({ children }: { children: React.ReactNode }) {
   const router = useRouter();
-  const { loading, firebaseUser, profile, orgs, activeOrgId, activeRole, setActiveOrgId } = useAuth();
+  const { loading, firebaseUser, profile, orgs, activeOrgId, activeRole, setActiveOrgId, membershipError } =
+    useAuth();
 
   useEffect(() => {
     if (!loading && !firebaseUser) router.replace("/sign-in");
   }, [loading, firebaseUser, router]);
+
+  if (membershipError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6">
+        <ErrorState
+          title="Couldn't load your account"
+          description={membershipError}
+          onRetry={() => window.location.reload()}
+        />
+      </div>
+    );
+  }
 
   if (loading) {
     return (

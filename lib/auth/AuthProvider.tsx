@@ -23,6 +23,7 @@ interface AuthState {
   activeRole: Role | null;
   activePreferences: GovernancePreferences;
   emailVerified: boolean;
+  membershipError: string | null;
   refreshEmailVerification: () => Promise<boolean>;
   setActiveOrgId: (orgId: string) => void;
   updatePreferences: (patch: Partial<GovernancePreferences>) => Promise<void>;
@@ -40,6 +41,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
   const [activeOrgId, setActiveOrgIdState] = useState<string | null>(null);
   const [emailVerified, setEmailVerified] = useState(false);
+  const [membershipError, setMembershipError] = useState<string | null>(null);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (u) => {
@@ -78,26 +80,45 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       collectionGroup(db, "members"),
       where("userId", "==", firebaseUser.uid)
     );
-    const unsub = onSnapshot(membershipsQuery, async (snap) => {
-      const byOrg: Record<string, { role: Role; preferences?: GovernancePreferences }> = {};
-      const orgIds: string[] = [];
-      snap.forEach((d) => {
-        const orgId = d.ref.parent.parent?.id;
-        if (!orgId) return;
-        orgIds.push(orgId);
-        const data = d.data();
-        byOrg[orgId] = { role: data.role as Role, preferences: data.preferences as GovernancePreferences | undefined };
-      });
-      setMemberships(byOrg);
+    const unsub = onSnapshot(
+      membershipsQuery,
+      async (snap) => {
+        const byOrg: Record<string, { role: Role; preferences?: GovernancePreferences }> = {};
+        const orgIds: string[] = [];
+        snap.forEach((d) => {
+          const orgId = d.ref.parent.parent?.id;
+          if (!orgId) return;
+          orgIds.push(orgId);
+          const data = d.data();
+          byOrg[orgId] = { role: data.role as Role, preferences: data.preferences as GovernancePreferences | undefined };
+        });
+        setMemberships(byOrg);
 
-      const orgDocs = await Promise.all(orgIds.map((id) => getDoc(doc(db, "organizations", id))));
-      const resolvedOrgs = orgDocs
-        .filter((d) => d.exists())
-        .map((d) => ({ id: d.id, ...d.data() }) as Organization);
-      setOrgs(resolvedOrgs);
-      setActiveOrgIdState((prev) => prev ?? resolvedOrgs[0]?.id ?? null);
-      setLoading(false);
-    });
+        const orgDocs = await Promise.all(orgIds.map((id) => getDoc(doc(db, "organizations", id))));
+        const resolvedOrgs = orgDocs
+          .filter((d) => d.exists())
+          .map((d) => ({ id: d.id, ...d.data() }) as Organization);
+        setOrgs(resolvedOrgs);
+        setActiveOrgIdState((prev) => prev ?? resolvedOrgs[0]?.id ?? null);
+        setMembershipError(null);
+        setLoading(false);
+      },
+      (err) => {
+        // Without this, a failed query (missing composite index, rules not
+        // yet deployed, offline, etc.) would leave `loading` true forever —
+        // the app would sit on a blank/skeleton screen with no visible error
+        // and no way out. This turns that into a real, actionable message.
+        console.error("Membership query failed", err);
+        setMembershipError(
+          err.code === "failed-precondition"
+            ? "This Firestore query needs an index that hasn't been created yet. Deploy indexes with `firebase deploy --only firestore:indexes`, then wait a few minutes for it to finish building."
+            : err.code === "permission-denied"
+              ? "Firestore denied this request. If you just deployed, security rules can take a moment to propagate — try refreshing. Otherwise, run `firebase deploy --only firestore:rules`."
+              : `Couldn't load your account data (${err.code}). Check your connection and try refreshing.`
+        );
+        setLoading(false);
+      }
+    );
     return unsub;
   }, [firebaseUser]);
 
@@ -137,6 +158,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     activeRole: activeOrgId ? memberships[activeOrgId]?.role ?? null : null,
     activePreferences: (activeOrgId ? memberships[activeOrgId]?.preferences : undefined) ?? DEFAULT_PREFERENCES,
     emailVerified,
+    membershipError,
     refreshEmailVerification,
     setActiveOrgId,
     updatePreferences,

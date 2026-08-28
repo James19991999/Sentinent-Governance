@@ -35,7 +35,14 @@ export default function OnboardingPage() {
       });
       router.push("/dashboard");
     } catch (err) {
-      setError("Couldn't create your organization. Please try again.");
+      const code = (err as { code?: string })?.code;
+      setError(
+        code === "permission-denied"
+          ? "Firestore denied this request. If you just deployed security rules, they can take a moment to propagate — try again in a minute. Otherwise, run `firebase deploy --only firestore:rules`."
+          : code
+            ? `Couldn't create your organization (${code}). Please try again.`
+            : "Couldn't create your organization. Please try again."
+      );
     } finally {
       setSubmitting(false);
     }
