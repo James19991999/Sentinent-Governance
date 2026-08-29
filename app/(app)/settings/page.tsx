@@ -12,6 +12,8 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Chip } from "@/components/ui/Chip";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { InlineErrorBanner } from "@/components/ui/InlineErrorBanner";
+import { firestoreErrorMessage } from "@/lib/firestore/errorMessage";
 import { LogOut, HelpCircle, FileText, ShieldCheck, ChevronRight, FileBarChart } from "lucide-react";
 import type { GovernancePreferences, ComplianceReportSnapshot } from "@/lib/types";
 
@@ -22,6 +24,7 @@ export default function SettingsPage() {
   const [signingOut, setSigningOut] = useState(false);
   const [savingKey, setSavingKey] = useState<keyof GovernancePreferences | null>(null);
   const [reports, setReports] = useState<ComplianceReportSnapshot[] | null>(null);
+  const [reportsError, setReportsError] = useState<string | null>(null);
   const canViewReports = activeRole === "admin" || activeRole === "owner";
 
   useEffect(() => {
@@ -32,8 +35,15 @@ export default function SettingsPage() {
         orderBy("generatedAt", "desc"),
         limit(6)
       ),
-      (snap) => setReports(snap.docs.map((d) => d.data() as ComplianceReportSnapshot)),
-      () => setReports([])
+      (snap) => {
+        setReports(snap.docs.map((d) => d.data() as ComplianceReportSnapshot));
+        setReportsError(null);
+      },
+      (err) => {
+        console.error("Compliance report snapshots query failed", err);
+        setReports([]);
+        setReportsError(firestoreErrorMessage(err));
+      }
     );
   }, [activeOrgId, canViewReports]);
 
@@ -115,6 +125,7 @@ export default function SettingsPage() {
 
       {canViewReports && (
         <Card title="Compliance Report History">
+          {reportsError && <InlineErrorBanner message={reportsError} />}
           {reports === null ? (
             <Skeleton className="h-24 w-full" />
           ) : reports.length === 0 ? (

@@ -9,13 +9,15 @@ import { Chip } from "@/components/ui/Chip";
 import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { ErrorState } from "@/components/ui/ErrorState";
+import { InlineErrorBanner } from "@/components/ui/InlineErrorBanner";
+import { firestoreErrorMessage } from "@/lib/firestore/errorMessage";
 import type { FairnessReport } from "@/lib/types";
 import { Play, Upload } from "lucide-react";
 
 export default function BiasAuditPage() {
   const { activeOrgId, firebaseUser } = useAuth();
   const [reports, setReports] = useState<FairnessReport[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [modelName, setModelName] = useState("");
   const [running, setRunning] = useState(false);
@@ -25,8 +27,15 @@ export default function BiasAuditPage() {
     if (!activeOrgId) return;
     return onSnapshot(
       query(collection(db, "fairnessReports"), where("orgId", "==", activeOrgId), orderBy("createdAt", "desc"), limit(20)),
-      (snap) => setReports(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as FairnessReport)),
-      () => setReports([])
+      (snap) => {
+        setReports(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as FairnessReport));
+        setLoadError(null);
+      },
+      (err) => {
+        console.error("Fairness reports query failed", err);
+        setReports([]);
+        setLoadError(firestoreErrorMessage(err));
+      }
     );
   }, [activeOrgId]);
 
@@ -61,6 +70,7 @@ export default function BiasAuditPage() {
 
   return (
     <div className="space-y-6">
+      {loadError && <InlineErrorBanner message={loadError} />}
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <p className="text-label-sm text-secondary">ACTIVE MONITORING</p>

@@ -11,6 +11,8 @@ import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { InlineErrorBanner } from "@/components/ui/InlineErrorBanner";
+import { firestoreErrorMessage } from "@/lib/firestore/errorMessage";
 import type { Workflow, WorkflowEthicsStatus } from "@/lib/types";
 import { Plus, ShieldCheck } from "lucide-react";
 
@@ -31,6 +33,7 @@ const statusLabel: Record<WorkflowEthicsStatus, string> = {
 export default function WorkflowsPage() {
   const { activeOrgId, firebaseUser, activeRole } = useAuth();
   const [workflows, setWorkflows] = useState<Workflow[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [name, setName] = useState("");
   const [department, setDepartment] = useState("");
@@ -51,8 +54,15 @@ export default function WorkflowsPage() {
     if (!activeOrgId) return;
     return onSnapshot(
       query(collection(db, "workflows"), where("orgId", "==", activeOrgId)),
-      (snap) => setWorkflows(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Workflow)),
-      () => setWorkflows([])
+      (snap) => {
+        setWorkflows(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Workflow));
+        setLoadError(null);
+      },
+      (err) => {
+        console.error("Workflows query failed", err);
+        setWorkflows([]);
+        setLoadError(firestoreErrorMessage(err));
+      }
     );
   }, [activeOrgId]);
 
@@ -76,6 +86,7 @@ export default function WorkflowsPage() {
 
   return (
     <div className="space-y-6">
+      {loadError && <InlineErrorBanner message={loadError} />}
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-headline-md">Automation Flow</h1>

@@ -10,6 +10,8 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Modal } from "@/components/ui/Modal";
+import { InlineErrorBanner } from "@/components/ui/InlineErrorBanner";
+import { firestoreErrorMessage } from "@/lib/firestore/errorMessage";
 import type { CourseCompletion, Course } from "@/lib/types";
 import { Clock, CheckCircle2, Plus, Trash2 } from "lucide-react";
 
@@ -17,6 +19,7 @@ export default function UpskillingPage() {
   const { activeOrgId, firebaseUser, profile, activeRole } = useAuth();
   const [completions, setCompletions] = useState<CourseCompletion[] | null>(null);
   const [customCourses, setCustomCourses] = useState<Course[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [marking, setMarking] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [title, setTitle] = useState("");
@@ -29,8 +32,15 @@ export default function UpskillingPage() {
     if (!activeOrgId) return;
     return onSnapshot(
       query(collection(db, "courseCompletions"), where("orgId", "==", activeOrgId)),
-      (snap) => setCompletions(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as CourseCompletion)),
-      () => setCompletions([])
+      (snap) => {
+        setCompletions(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as CourseCompletion));
+        setLoadError(null);
+      },
+      (err) => {
+        console.error("Course completions query failed", err);
+        setCompletions([]);
+        setLoadError(firestoreErrorMessage(err));
+      }
     );
   }, [activeOrgId]);
 
@@ -38,8 +48,15 @@ export default function UpskillingPage() {
     if (!activeOrgId) return;
     return onSnapshot(
       collection(db, "organizations", activeOrgId, "customCourses"),
-      (snap) => setCustomCourses(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Course)),
-      () => setCustomCourses([])
+      (snap) => {
+        setCustomCourses(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Course));
+        setLoadError(null);
+      },
+      (err) => {
+        console.error("Custom courses query failed", err);
+        setCustomCourses([]);
+        setLoadError((prev) => prev ?? firestoreErrorMessage(err));
+      }
     );
   }, [activeOrgId]);
 
@@ -101,6 +118,7 @@ export default function UpskillingPage() {
 
   return (
     <div className="space-y-6">
+      {loadError && <InlineErrorBanner message={loadError} />}
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-headline-md">Welcome back{profile ? `, ${profile.displayName}` : ""}.</h1>

@@ -8,17 +8,21 @@ import { FRAMEWORK_LIBRARY, DEFAULT_COMPLIANCE_ITEMS } from "@/lib/data/framewor
 import { Card } from "@/components/ui/Card";
 import { Chip } from "@/components/ui/Chip";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { InlineErrorBanner } from "@/components/ui/InlineErrorBanner";
+import { firestoreErrorMessage } from "@/lib/firestore/errorMessage";
 import type { ComplianceItem } from "@/lib/types";
 
 export default function GuidelinesPage() {
   const { activeOrgId, firebaseUser } = useAuth();
   const [items, setItems] = useState<ComplianceItem[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!activeOrgId) return;
     return onSnapshot(
       query(collection(db, "complianceItems"), where("orgId", "==", activeOrgId)),
       (snap) => {
+        setLoadError(null);
         const existing = snap.docs.map((d) => ({ id: d.id, ...d.data() }) as ComplianceItem);
         if (existing.length === 0) {
           setItems(
@@ -33,7 +37,11 @@ export default function GuidelinesPage() {
           setItems(existing);
         }
       },
-      () => setItems([])
+      (err) => {
+        console.error("Compliance items query failed", err);
+        setItems([]);
+        setLoadError(firestoreErrorMessage(err));
+      }
     );
   }, [activeOrgId]);
 
@@ -53,6 +61,7 @@ export default function GuidelinesPage() {
 
   return (
     <div className="space-y-6">
+      {loadError && <InlineErrorBanner message={loadError} />}
       <div>
         <h1 className="text-headline-md">Ethical AI Standards &amp; Oversight</h1>
         <p className="text-body-md text-on-surface-variant mt-1">

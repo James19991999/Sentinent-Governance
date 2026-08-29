@@ -9,6 +9,8 @@ import { Card } from "@/components/ui/Card";
 import { Chip } from "@/components/ui/Chip";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { ErrorState } from "@/components/ui/ErrorState";
+import { firestoreErrorMessage } from "@/lib/firestore/errorMessage";
 import type { FairnessReport, Workflow, CourseCompletion } from "@/lib/types";
 import { AlertTriangle, CheckCircle2, ArrowRight } from "lucide-react";
 
@@ -17,20 +19,34 @@ export default function DashboardPage() {
   const [reports, setReports] = useState<FairnessReport[] | null>(null);
   const [workflows, setWorkflows] = useState<Workflow[] | null>(null);
   const [completions, setCompletions] = useState<CourseCompletion[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!activeOrgId) return;
+    setLoadError(null);
+    const onError = (err: { code?: string; message?: string }) => {
+      console.error("Dashboard query failed", err);
+      // Previously these listeners had NO error handler at all -- a failed
+      // query (missing index, rules not yet propagated, etc.) meant
+      // reports/workflows/completions stayed `null` forever, `loading`
+      // never resolved, and the page sat on the skeleton indefinitely with
+      // no way to tell what was wrong. Now it surfaces a real message.
+      setLoadError((prev) => prev ?? firestoreErrorMessage(err));
+    };
     const unsubReports = onSnapshot(
       query(collection(db, "fairnessReports"), where("orgId", "==", activeOrgId), orderBy("createdAt", "desc"), limit(10)),
-      (snap) => setReports(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as FairnessReport))
+      (snap) => setReports(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as FairnessReport)),
+      onError
     );
     const unsubWorkflows = onSnapshot(
       query(collection(db, "workflows"), where("orgId", "==", activeOrgId)),
-      (snap) => setWorkflows(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Workflow))
+      (snap) => setWorkflows(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Workflow)),
+      onError
     );
     const unsubCompletions = onSnapshot(
       query(collection(db, "courseCompletions"), where("orgId", "==", activeOrgId)),
-      (snap) => setCompletions(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as CourseCompletion))
+      (snap) => setCompletions(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as CourseCompletion)),
+      onError
     );
     return () => {
       unsubReports();
@@ -38,6 +54,16 @@ export default function DashboardPage() {
       unsubCompletions();
     };
   }, [activeOrgId]);
+
+  if (loadError) {
+    return (
+      <ErrorState
+        title="Couldn't load your dashboard"
+        description={loadError}
+        onRetry={() => window.location.reload()}
+      />
+    );
+  }
 
   const loading = reports === null || workflows === null || completions === null;
 
